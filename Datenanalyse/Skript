@@ -1,0 +1,167 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import spearmanr
+from matplotlib.colors import LinearSegmentedColormap
+
+# ===============================================================
+# KONFIGURATION
+# ===============================================================
+# Passe diese Variablen an deine Spaltennamen und gewünschten Labels an.
+X_VAR = 'EntscheidungsF1-Score'
+Y_VAR = 'AIAS4-Score'
+
+X_VAR_LBL = "F1-Score"
+Y_VAR_LBL = "AIAS-4 Score"
+
+# Design-Einstellungen
+HIGH_COLOR = '#D4000B'  # Farbe für hohe Werte
+LOW_COLOR = '#2B006E'   # Farbe für niedrige Werte
+MID_COLOR = '#80043A'   # Farbe für mittlere Werte
+FONT_FAMILY = 'Arial'
+
+FOOTNOTE_TEXT = "Trendlinie zeigt lineare Regression."
+
+# ===============================================================
+# FUNKTIONEN
+# ===============================================================
+
+def prepare_data(df, x_var, y_var):
+    """
+    Bereinigt und transformiert den DataFrame für die Analyse.
+
+    Args:
+        df (pd.DataFrame): Der Eingabe-DataFrame.
+        x_var (str): Spaltenname der x-Variable.
+        y_var (str): Spaltenname der y-Variable.
+
+    Returns:
+        pd.DataFrame: Der bereinigte DataFrame mit einer zusätzlichen
+                      Spalte für die Punktdichte.
+    """
+    # Sicherstellen, dass die Spalten numerisch sind; Fehlerhafte Werte werden zu NaN
+    df[x_var] = pd.to_numeric(df[x_var], errors='coerce')
+    df[y_var] = pd.to_numeric(df[y_var], errors='coerce')
+    
+    # Entferne Zeilen, in denen eine der beiden Variablen NaN ist
+    df.dropna(subset=[x_var, y_var], inplace=True)
+    
+    # Berechne die Dichte, um überlappende Punkte in der Visualisierung
+    # durch die Punktgröße darzustellen.
+    df['punkt_dichte'] = df.groupby([x_var, y_var])[x_var].transform('count')
+    
+    return df
+
+def calculate_statistics(df, x_var, y_var):
+    """
+    Berechnet die Spearman-Rangkorrelation.
+
+    Args:
+        df (pd.DataFrame): Der DataFrame mit den Daten.
+        x_var (str): Spaltenname der x-Variable.
+        y_var (str): Spaltenname der y-Variable.
+
+    Returns:
+        tuple: Enthält den Korrelationskoeffizienten (rho) und den p-Wert.
+    """
+    rho, p_value = spearmanr(df[x_var], df[y_var])
+    return rho, p_value
+
+def create_visualization(df, x_var, y_var, rho, p_value):
+    """
+    Erstellt und zeigt den finalen Scatterplot an.
+
+    Args:
+        df (pd.DataFrame): Der vorbereitete DataFrame.
+        x_var (str): Spaltenname der x-Variable.
+        y_var (str): Spaltenname der y-Variable.
+        rho (float): Der Spearman-Korrelationskoeffizient.
+        p_value (float): Der p-Wert der Korrelation.
+    """
+    # --- Setup für Plot und Design ---
+    plt.rcParams['font.family'] = FONT_FAMILY
+    custom_cmap = LinearSegmentedColormap.from_list("my_gradient", [LOW_COLOR, MID_COLOR, HIGH_COLOR])
+    
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    # --- Scatterplot erstellen ---
+    sns.scatterplot(
+        x=x_var,
+        y=y_var,
+        data=df,
+        ax=ax,
+        hue=y_var,            # Farbe basiert auf dem AIAS-4 Score
+        palette=custom_cmap,
+        size='punkt_dichte',  # Größe basiert auf der Anzahl überlappender Punkte
+        sizes=(50, 300),
+        edgecolor='w',
+        linewidth=0.5,
+        legend='auto'
+    )
+
+    # --- Trendlinie hinzufügen ---
+    sns.regplot(
+        x=x_var, y=y_var, data=df, ax=ax,
+        scatter=False,  # Nur die Linie zeichnen, nicht die Punkte
+        line_kws={'color': 'gray', 'linestyle': '--', 'linewidth': 2.5}
+    )
+
+    # --- Titel und Beschriftungen formatieren ---
+    p_text = "p < .001" if p_value < 0.001 else f"p = {p_value:.3f}".replace("0.", ".")
+    # Griechisches Rho (ρ) für den Titel verwenden
+    title_text = (f"Zusammenhang zwischen '{Y_VAR_LBL}' und '{X_VAR_LBL}'\n"
+                  f"(Spearman's \u03C1 = {rho:.2f}, {p_text})")
+
+    ax.set_title(title_text, fontsize=16, pad=20)
+    ax.set_ylabel(Y_VAR_LBL, fontsize=12)
+    ax.set_xlabel(X_VAR_LBL, fontsize=12)
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+    # --- Legende und Farbskala anpassen ---
+    # Die Legende für die Punktgröße (size) anpassen
+    ax.legend(loc='lower left', title='Anzahl Punkte')
+    
+    # Die Farbskala (colorbar) anpassen, die durch `hue` erzeugt wird
+    cbar = ax.collections[0].colorbar
+    if cbar:
+        cbar.set_label(Y_VAR_LBL, fontsize=10)
+        cbar.ax.tick_params(labelsize=8)
+
+    # --- Layout finalisieren und anzeigen ---
+    plt.subplots_adjust(bottom=0.15, top=0.9)
+    if FOOTNOTE_TEXT:
+        plt.figtext(0.05, 0.01, FOOTNOTE_TEXT, ha="left", fontsize=8, color="dimgray")
+
+    plt.show()
+
+# =============================================================================
+# SKRIPT-AUSFÜHRUNG
+# =============================================================================
+
+def main():
+    """Hauptfunktion zur Ausführung des Skripts."""
+    try:
+        # Annahme: 'dataset' ist ein global verfügbarer DataFrame.
+        # In einer realen Anwendung würde man hier die Daten laden, z.B.:
+        # dataset = pd.read_csv('deine_daten.csv')
+        
+        prepared_df = prepare_data(dataset, X_VAR, Y_VAR)
+        
+        # Nur fortfahren, wenn nach der Bereinigung noch Daten vorhanden sind
+        if not prepared_df.empty:
+            rho, p_value = calculate_statistics(prepared_df, X_VAR, Y_VAR)
+            create_visualization(prepared_df, X_VAR, Y_VAR, rho, p_value)
+        else:
+            print("Nach der Datenbereinigung sind keine gültigen Daten mehr vorhanden.")
+
+    except Exception as e:
+        # Einfache Fehlerbehandlung zur Anzeige von Problemen
+        print(f"Ein Fehler ist aufgetreten: {e}")
+        plt.figure(figsize=(8, 6))
+        plt.text(0.5, 0.5, f'Fehler:\n{e}', ha='center', va='center', wrap=True, fontsize=12, color='red')
+        plt.gca().set_axis_off()
+        plt.show()
+
+# Führe die Hauptfunktion aus
+# main()
